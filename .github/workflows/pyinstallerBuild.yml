@@ -45,7 +45,7 @@ jobs:
     # exeファイルにする
     - name: Build EXE
       run: |
-        flet pack .\main.py --name MyApp --onedir --product-name MyApp -y
+        flet pack .\VRCOSCWatch.py --name MyApp --onedir --product-name MyApp -y
     
     # zipに圧縮 
     - name: zip
