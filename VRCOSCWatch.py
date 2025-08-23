@@ -1,3 +1,4 @@
+import importlib
 import os
 import sys
 import tkinter as tk
@@ -7,7 +8,6 @@ from datetime import datetime
 from time import sleep
 from threading import Thread
 from math import ceil
-import importlib
 import logging
 import json
 
@@ -29,8 +29,6 @@ import_with_install("python-osc", "pythonosc")
 from pythonosc.udp_client import SimpleUDPClient
 import_with_install("nvidia-ml-py3", "pynvml")
 import pynvml
-import_with_install("psutil")
-import psutil
 
 class OSCWatchApp:
     # OSCパラメータ
@@ -327,11 +325,8 @@ class OSCWatchApp:
                 "1) エクスプローラーで C:\\Windows\\System32\\ を開く\n"
                 "2) nvml.dll をコピー\n"
                 "3) C:\\Program Files\\NVIDIA Corporation\\NVSMI\\ を開く\n"
-                "4) 貼り付け\n"
-                "コピー後、このアプリを再起動してください。",
-             
-                "C:\\Windows\\System32\\ \n"
-                "C:\\Program Files\\NVIDIA Corporation\\NVSMI\\ "
+                "4) ファイルを貼り付け\n"
+                "このアプリを再起動してこのエラーがでないか確認してください。",
             )
             sys.exit(1)
         except Exception as e:
@@ -547,7 +542,7 @@ class OSCWatchApp:
     def ceil_minifloat(value):
         return ceil(value * 128) / 128
 
-    def show_copyable_command_dialog(self, title, message, command):
+    def show_copyable_command_dialog(self, title, message):
         win = tk.Toplevel(self.root)
         win.title(title)
         tk.Label(win, text=message, justify="left").pack(padx=10, pady=(10,0))
