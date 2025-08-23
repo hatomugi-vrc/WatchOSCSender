@@ -49,7 +49,7 @@ jobs:
     # zipに圧縮 
     - name: zip
       run: |
-        Compress-Archive -Path dist/WatchOSCSender/* -DestinationPath dist/WatchOSCSender-${{ github.event.inputs.version }}.zip
+        Compress-Archive -Path dist/WatchOSCSender/* -DestinationPath dist/WatchOSCSender.zip
         
     # アップロード
     - name: Upload EXE
