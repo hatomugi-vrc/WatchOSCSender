@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - develop
-  workflow_dispatch:
     inputs:
       version:
         description: 'リリースバージョン (例: v1.0.0)'
