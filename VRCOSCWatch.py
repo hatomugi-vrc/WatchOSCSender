@@ -65,31 +65,33 @@ class OSCWatchApp:
             self.start()
 
     def setup_logging(self):
-        """ログフォルダとログファイルを設定"""
-        # スクリプトファイルと同じディレクトリにlogフォルダを作成
+        """ログファイル"""
+        # logフォルダを作成
         script_dir = os.path.dirname(os.path.abspath(__file__))
         log_dir = os.path.join(script_dir, "log")
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
+        os.makedirs(log_dir, exist_ok=True)        
         
         # ログファイル名（日時付き）
-        log_filename = f"vrc_osc_watch_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        log_filename = f"vrc_osc_watch_{datetime.now().strftime('%Y%m%d')}.log"
         log_filepath = os.path.join(log_dir, log_filename)
-        
-        # ログ設定
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(message)s',
-            handlers=[
-                logging.FileHandler(log_filepath, encoding='utf-8'),
-                logging.StreamHandler()  # コンソールにも出力
-            ]
-        )
-        
-        self.logger = logging.getLogger(__name__)
+
+        logger = logging.getLogger(__name__)
+        logger.setLevel(logging.INFO)
+
+        if not logger.handlers:
+            fmt = logging.Formatter('%(asctime)s - %(message)s')
+            file_handler = logging.FileHandler(log_filepath, mode='a', encoding='utf-8')
+            file_handler.setFormatter(fmt)
+            stream_handler = logging.StreamHandler()
+            stream_handler.setFormatter(fmt)
+
+            logger.addHandler(file_handler)
+            logger.addHandler(stream_handler)
+
+        self.logger = logger
 
     def detect_gpu_vendor(self):
-        """GPUを検出"""
+        """GPU検出"""
         try:
             # NVIDIAドライバをチェック
             pynvml.nvmlInit()
@@ -549,12 +551,6 @@ class OSCWatchApp:
         win = tk.Toplevel(self.root)
         win.title(title)
         tk.Label(win, text=message, justify="left").pack(padx=10, pady=(10,0))
-        # entry = tk.Entry(win, width=90)
-        # entry.insert(0, command)
-        # entry.config(state="readonly")
-        # entry.pack(padx=10, pady=20)
-        # entry.select_range(0, tk.END)
-        # entry.focus_set()
         tk.Button(win, text="閉じる", command=lambda: (win.destroy(), sys.exit(1))).pack(pady=10)
         win.grab_set()
         win.wait_window()
