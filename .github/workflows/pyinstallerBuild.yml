@@ -1,6 +1,9 @@
 name: Build Windows EXE
 
 on:
+  push:
+    branches:
+      - develop
   workflow_dispatch:
     inputs:
       version:
