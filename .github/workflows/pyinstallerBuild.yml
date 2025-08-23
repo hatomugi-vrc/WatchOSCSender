@@ -62,10 +62,9 @@ jobs:
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: ${{ github.event.inputs.version }}
-        name: WatchOSCSender ${{ github.event.inputs.version }}
+        name: WatchOSCSender
         body: ${{ github.event.inputs.release_notes }}
         draft: true
         prerelease: false
         files: |
-          dist/WatchOSCSender-${{ github.event.inputs.version }}.zip
+          dist/WatchOSCSender.zip
