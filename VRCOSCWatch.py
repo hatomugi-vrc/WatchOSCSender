@@ -3,7 +3,6 @@ import os
 import sys
 import tkinter as tk
 from tkinter import messagebox
-import tkinter.ttk as ttk
 from datetime import datetime
 from time import sleep
 from threading import Thread
@@ -27,8 +26,8 @@ def import_with_install(package, module_name=None):
 # 必要なライブラリをインポートまたはインストール
 import_with_install("python-osc", "pythonosc")
 from pythonosc.udp_client import SimpleUDPClient
-import_with_install("nvidia-ml-py3", "pynvml")
-import pynvml
+import_with_install("GPUtil")
+import GPUtil
 
 class OSCWatchApp:
     # OSCパラメータ
@@ -43,6 +42,7 @@ class OSCWatchApp:
         "VRAMZeroPlace"  : "/avatar/parameters/VRAMZeroPlace",
     }
 
+    # コンストラクタ
     def __init__(self, root):
         self.root = root
         self.root.title("VRC-OSC-Watch")
@@ -53,7 +53,7 @@ class OSCWatchApp:
         self.CHAT_PRESETS_FILE = os.path.join(script_dir, "chat_presets.json")
         self.SETTINGS_FILE = os.path.join(script_dir, "settings.json")
 
-        self.gpu_vendor = self.detect_gpu_vendor()
+        self.gpu_name = GPUtil.getGPUs()[0].name
         self.load_chat_presets()
         self.load_settings()
         self.create_widgets()
@@ -62,8 +62,8 @@ class OSCWatchApp:
         if self.defaultStart_var.get():
             self.start()
 
+    # ログ生成
     def setup_logging(self):
-        """ログファイル"""
         # logフォルダを作成
         script_dir = os.path.dirname(os.path.abspath(__file__))
         log_dir = os.path.join(script_dir, "log")
@@ -88,42 +88,7 @@ class OSCWatchApp:
 
         self.logger = logger
 
-    def detect_gpu_vendor(self):
-        """GPU検出"""
-        try:
-            # NVIDIAドライバをチェック
-            pynvml.nvmlInit()
-            device_count = pynvml.nvmlDeviceGetCount()
-            if device_count > 0:
-                handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-                gpu_name = pynvml.nvmlDeviceGetName(handle).decode('utf-8')
-                pynvml.nvmlShutdown()
-                self.gpu_name = gpu_name
-                return "NVIDIA"
-        except:
-            pass
-        
-        try:
-            import subprocess
-            result = subprocess.run(['wmic', 'path', 'win32_VideoController', 'get', 'name'], 
-                                  capture_output=True, text=True, shell=True)
-            if result.returncode == 0:
-                output = result.stdout.strip()
-                lines = [line.strip() for line in output.split('\n') if line.strip() and line.strip() != 'Name']
-                for line in lines:
-                    line_upper = line.upper()
-                    if 'AMD' in line_upper or 'ATI' in line_upper or 'RADEON' in line_upper:
-                        self.gpu_name = line
-                        return "AMD"
-                    elif 'NVIDIA' in line_upper or 'GEFORCE' in line_upper:
-                        self.gpu_name = line
-                        return "NVIDIA"
-        except:
-            pass
-        
-        self.gpu_name = "Unknown GPU"
-        return "UNKNOWN"
-
+    # UI生成
     def create_widgets(self):
         # 基本設定エリア
         # IP
@@ -155,7 +120,7 @@ class OSCWatchApp:
 
         # 詳細設定の折りたたみボタン
         initial_text = "おまけ機能チャット送信 OFF" if self.chat_enabled_var.get() else "おまけ機能チャット送信 ON"
-        self.toggle_button = tk.Button(self.root, text=initial_text, command=self.toggle_advanced_settings)
+        self.toggle_button = tk.Button(self.root, text=initial_text, command=self.chat_button)
         self.toggle_button.grid(row=5, column=0, columnspan=2, pady=2, sticky="w")
 
         # 詳細設定フレーム（最初は非表示）
@@ -203,7 +168,7 @@ class OSCWatchApp:
         self.status_label.grid(row=7, column=0, columnspan=2, sticky="w", pady=0)
 
         # GPU情報表示
-        gpu_info_text = f"GPU: {self.gpu_vendor}\n{self.gpu_name}"
+        gpu_info_text = f"GPU: {self.gpu_name}"
         self.gpu_info_label = tk.Label(self.root, text=gpu_info_text, fg="blue", justify="left")
         self.gpu_info_label.grid(row=8, column=0, columnspan=2, sticky="w", pady=0)
 
@@ -211,10 +176,10 @@ class OSCWatchApp:
         self.root.columnconfigure(1, weight=1)
         
         # 保存された設定に基づいてチャット入力の初期状態を設定
-        self.toggle_chat_input()
+        self.chat_grayout()
 
-    def toggle_advanced_settings(self):
-        """詳細設定の表示/非表示とチャット機能のON/OFFを切り替える"""
+    # チャットボタンONOFF
+    def chat_button(self):
         # 状態を反転
         is_enabled = not self.chat_enabled_var.get()
         self.chat_enabled_var.set(is_enabled)
@@ -223,30 +188,28 @@ class OSCWatchApp:
             # 詳細設定を表示し、機能を有効化
             self.advanced_frame.grid(row=6, column=0, columnspan=2, sticky="ew", pady=2)
             self.toggle_button.config(text="おまけ機能チャット送信 OFF")
-            self.toggle_chat_input()
+            self.chat_grayout()
         else:
             # 詳細設定を隠し、機能を無効化
             self.advanced_frame.grid_remove()
             self.toggle_button.config(text="おまけ機能チャット送信 ON")
-            self.toggle_chat_input()
+            self.chat_grayout()
         
         # ステータス表示を更新
         self.update_status_display()
-        
-
-
-    def toggle_chat_input(self):
-        """チャット入力欄の有効/無効を切り替える"""
+    
+    # チャット入力欄の有効/無効       
+    def chat_grayout(self):
         new_state = tk.NORMAL if self.chat_enabled_var.get() else tk.DISABLED
         
         self.chat_text.config(state=new_state)
         self.save_preset_button.config(state=new_state)
         
-        # プリセットボタンのUIを再構築（適切な状態で）
+        # プリセットボタンのUIを更新
         self.update_preset_buttons()
 
-    def on_chat_text_change(self, event=None):
-        """チャットテキスト変更時のイベントハンドラー"""
+    # チャットテキスト変更時のイベントハンドラー
+    def on_chat_text_change(self, event=None):        
         if self.running and self.chat_enabled_var.get():
             # 少し遅延させてステータス更新（連続入力時の負荷軽減）
             self.root.after(500, self.update_status_display)
@@ -260,7 +223,7 @@ class OSCWatchApp:
             self.client = SimpleUDPClient(ip, port)
             self.running = True
             self.update_status_display()
-            Thread(target=self.send_messages, args=(interval, sync), daemon=True).start()
+            Thread(target=self.send_osc, args=(interval, sync), daemon=True).start()
         except Exception as e:
             error_msg = f"Start error: {str(e)}"
             self.console(error_msg)
@@ -270,8 +233,8 @@ class OSCWatchApp:
         self.running = False
         self.update_status_display()
 
+    # ステータス更新
     def update_status_display(self):
-        """ステータス表示を更新する"""
         if self.running:
             status_text = "ステータス: Start"
             color = "green"
@@ -292,77 +255,31 @@ class OSCWatchApp:
         
         self.status_label.config(text=full_text, fg=color)
 
-    def get_gpu_usage_v2(self):
-        if self.gpu_vendor == "NVIDIA":
-            return self.get_nvidia_gpu_usage()
-        elif self.gpu_vendor == "AMD":
-            return self.get_amd_gpu_usage()
-        else:
-            # ※Todo テスター見つかったのでAMDグラボも対応させます。
+    def get_gpu(self):
+        gpus = GPUtil.getGPUs()
+        return int(max([gpu.load * 100 for gpu in gpus], default=0)) \
+            , int(max([gpu.memoryUtil * 100 for gpu in gpus], default=0))
 
-            # GPU使用率が取得できない場合は0を返す
-            self.console("警告: 対応していないGPUです。GPU使用率は0%として表示されます。")
-            return 0, 0
-
-    def get_nvidia_gpu_usage(self):
-        """NVIDIA GPU使用率を取得"""
-        try:
-            pynvml.nvmlInit()
-            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-            utilization = pynvml.nvmlDeviceGetUtilizationRates(handle)
-            memory_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
-            pynvml.nvmlShutdown()
-            return int(utilization.gpu), int(memory_info.used / memory_info.total * 100)
-        except pynvml.NVMLError_LibraryNotFound:
-            self.show_copyable_command_dialog(
-                "グラボエラー",
-                
-                "NVIDIAドライバ (nvml.dll) が見つかりませんでした。\n"
-                "NVIDIA公式情報などをご確認ください。\n"
-                "\n"
-                "2025/7 時点の情報: C:\\Program Files\\NVIDIA Corporation\\NVSMI\\ 配下に nvml.dll が無い場合は、\n"
-                "次の手順で手動コピーすると解決する場合があります (自己責任)。\n"
-                "1) エクスプローラーで C:\\Windows\\System32\\ を開く\n"
-                "2) nvml.dll をコピー\n"
-                "3) C:\\Program Files\\NVIDIA Corporation\\NVSMI\\ を開く\n"
-                "4) ファイルを貼り付け\n"
-                "このアプリを再起動してこのエラーがでないか確認してください。",
-            )
-            sys.exit(1)
-        except Exception as e:
-            error_code = e.args[0] if e.args else "Unknown"
-            error_message = pynvml.nvmlErrorString(error_code) if hasattr(pynvml, "nvmlErrorString") else str(e)
-            self.console(f"Error Code: {error_code}")
-            self.console(f"Error Message: {error_message}")
-            messagebox.showerror("グラボエラー", f"想定されていないエラーです。\n製作者にお問い合わせお願いします。\nError Code: {error_code}\nError Message: {error_message}")
-            sys.exit(1)
-
-    def get_amd_gpu_usage(self):
-        """AMD GPU使用率取得（非対応）"""
-        msg = "AMD GPU使用率の監視は現在非対応です。0%として表示されます。"
-        self.console(msg)
-        return 0, 0
-
-    def send_messages(self, interval, sync):
+    # OSC送信
+    def send_osc(self, interval, sync):
         sync_count = int(sync / interval)
         counters = {key: 0 for key in self.AVATAR_PARAMS.keys()}
-        self.console(f"GPU Vendor detected: {self.gpu_vendor}")
         
         while self.running:
             now = datetime.now()
-            self.send_param("HourTenPlace", now.hour // 10, counters, sync_count)
-            self.send_param("HourZeroPlace", now.hour % 10, counters, sync_count)
-            self.send_param("MinuteTenPlace", now.minute // 10, counters, sync_count)
-            self.send_param("MinuteZeroPlace", now.minute % 10, counters, sync_count)
+            self.send_osc_param("HourTenPlace", now.hour // 10, counters, sync_count)
+            self.send_osc_param("HourZeroPlace", now.hour % 10, counters, sync_count)
+            self.send_osc_param("MinuteTenPlace", now.minute // 10, counters, sync_count)
+            self.send_osc_param("MinuteZeroPlace", now.minute % 10, counters, sync_count)
             self.console(f"Sent: {now.strftime('%Y-%m-%d %H:%M:%S')}")
-            gpu, vram = self.get_gpu_usage_v2()
+            gpu, vram = self.get_gpu()
             gpu = min(gpu, 99)
             vram = min(vram, 99)
-            self.console(f"gpu:{gpu}% vram:{vram}% (vendor:{self.gpu_vendor})")
-            self.send_param("GPUTenPlace", gpu // 10, counters, sync_count)
-            self.send_param("GPUZeroPlace", gpu % 10, counters, sync_count)
-            self.send_param("VRAMTenPlace", vram // 10, counters, sync_count)
-            self.send_param("VRAMZeroPlace", vram % 10, counters, sync_count)
+            self.console(f"gpu:{gpu}% vram:{vram}%")
+            self.send_osc_param("GPUTenPlace", gpu // 10, counters, sync_count)
+            self.send_osc_param("GPUZeroPlace", gpu % 10, counters, sync_count)
+            self.send_osc_param("VRAMTenPlace", vram // 10, counters, sync_count)
+            self.send_osc_param("VRAMZeroPlace", vram % 10, counters, sync_count)
             
             # チャット送信処理
             if self.chat_enabled_var.get():
@@ -370,7 +287,7 @@ class OSCWatchApp:
             
             sleep(interval)
 
-    def send_param(self, param_name, value, counters, sync_count):
+    def send_osc_param(self, param_name, value, counters, sync_count):
         if counters[param_name] <= 0 or value != counters.get(f"prev_{param_name}", None):
             self.client.send_message(self.AVATAR_PARAMS[param_name], value)
             counters[param_name] = sync_count
@@ -379,8 +296,8 @@ class OSCWatchApp:
         else:
             counters[param_name] -= 1
 
+    # チャット送信
     def send_chat_message(self):
-        """チャットメッセージをVRChatに送信する"""
         try:
             # テキストウィジェットからメッセージを取得
             message = self.chat_text.get("1.0", tk.END).strip()
@@ -394,8 +311,8 @@ class OSCWatchApp:
             error_msg = f"Chat send error: {str(e)}"
             self.console(error_msg)
 
+    # チャット設定読込
     def load_chat_presets(self):
-        """チャットプリセットをJSONファイルから読み込む"""
         try:
             if os.path.exists(self.CHAT_PRESETS_FILE):
                 with open(self.CHAT_PRESETS_FILE, 'r', encoding='utf-8') as f:
@@ -408,16 +325,16 @@ class OSCWatchApp:
             self.console(f"Error loading chat presets: {e}")
             self.chat_presets = []
 
+    # チャット設定保存
     def save_chat_presets(self):
-        """チャットプリセットをJSONファイルに保存する"""
         try:
             with open(self.CHAT_PRESETS_FILE, 'w', encoding='utf-8') as f:
                 json.dump(self.chat_presets, f, ensure_ascii=False, indent=2)
         except Exception as e:
             self.console(f"Error saving chat presets: {e}")
 
-    def load_settings(self):
-        """設定をJSONファイルから読み込む"""
+    # 設定読込
+    def load_settings(self):  
         try:
             if os.path.exists(self.SETTINGS_FILE):
                 with open(self.SETTINGS_FILE, 'r', encoding='utf-8') as f:
@@ -435,8 +352,8 @@ class OSCWatchApp:
             self.defaultStart_var = tk.BooleanVar(value=True)
             self.chat_enabled_var = tk.BooleanVar(value=False)
 
+    # 設定保存
     def save_settings(self):
-        """設定をJSONファイルに保存する"""
         try:
             settings = {
                 'defaultStart': self.defaultStart_var.get()
@@ -446,8 +363,8 @@ class OSCWatchApp:
         except Exception as e:
             self.console(f"Error saving settings: {e}")
 
+    # プリセットボタンのUIを更新
     def update_preset_buttons(self):
-        """プリセットボタンのUIを更新する"""
         # 既存のウィジェットをクリア
         for widget in self.presets_frame.winfo_children():
             widget.destroy()
@@ -478,15 +395,15 @@ class OSCWatchApp:
             down_btn.pack(side='left')
             
             # プリセットメッセージボタン
-            btn = tk.Button(preset_frame, text=preset, command=lambda p=preset: self.add_preset_to_chat(p), state=button_state, anchor='w')
+            btn = tk.Button(preset_frame, text=preset, command=lambda p=preset: self.update_preset_to_chat(p), state=button_state, anchor='w')
             btn.pack(side='left', expand=True, fill='x', padx=(1,0))
             
             # 削除ボタン
             del_btn = tk.Button(preset_frame, text="削除", command=lambda p=preset: self.delete_preset(p), state=button_state)
             del_btn.pack(side='right')
 
-    def add_preset_to_chat(self, preset_text):
-        """プリセットテキストをチャット入力欄に設定する（既存テキストを置き換え）"""
+    # プリセットテキストをチャット入力欄に挿入
+    def update_preset_to_chat(self, preset_text):  
         if self.chat_enabled_var.get():
             # 既存のテキストをクリアしてから新しいテキストを設定
             self.chat_text.delete("1.0", tk.END)
@@ -494,32 +411,32 @@ class OSCWatchApp:
             # ステータス表示を更新
             if self.running:
                 self.update_status_display()
-
+    
+    # プリセットを削除しUIと設定ファイルを更新
     def delete_preset(self, preset_text):
-        """プリセットを削除してUIとファイルを更新する"""
         if preset_text in self.chat_presets:
             self.chat_presets.remove(preset_text)
             self.save_chat_presets()
             self.update_preset_buttons()
 
+    # プリセットを一つ上に移動
     def move_preset_up(self, index):
-        """プリセットを一つ上に移動する"""
         if index > 0 and index < len(self.chat_presets):
-            # 要素を入れ替え
+            # 要素入れ替え
             self.chat_presets[index], self.chat_presets[index - 1] = self.chat_presets[index - 1], self.chat_presets[index]
             self.save_chat_presets()
             self.update_preset_buttons()
-
+    
+    # プリセットを一つ下に移動
     def move_preset_down(self, index):
-        """プリセットを一つ下に移動する"""
         if index >= 0 and index < len(self.chat_presets) - 1:
-            # 要素を入れ替え
+            # 要素入れ替え
             self.chat_presets[index], self.chat_presets[index + 1] = self.chat_presets[index + 1], self.chat_presets[index]
             self.save_chat_presets()
             self.update_preset_buttons()
 
+    # チャットメッセージをプリセットとして保存する
     def save_current_chat_as_preset(self):
-        """現在のチャットメッセージをプリセットとして保存する"""
         message = self.chat_text.get("1.0", tk.END).strip()
         if message and message not in self.chat_presets:
             self.chat_presets.append(message)
