@@ -1,7 +1,9 @@
 name: Build Windows EXE
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - develop
     inputs:
       version:
         description: 'リリースバージョン (例: v1.0.0)'
@@ -42,30 +44,27 @@ jobs:
     # exeファイルにする
     - name: Build EXE
       run: |
-        flet pack .\main.py --name MyApp --onedir --icon .\icon.ico --product-name MyApp -y
+        flet pack .\VRCOSCWatch.py --name WatchOSCSender --onedir --product-name WatchOSCSender -y
     
     # zipに圧縮 
     - name: zip
       run: |
-        Compress-Archive -Path dist/MyApp/* -DestinationPath dist/MyApp-${{ github.event.inputs.version }}.zip
+        Compress-Archive -Path dist/WatchOSCSender/* -DestinationPath dist/WatchOSCSender.zip
         
     # アップロード
     - name: Upload EXE
       uses: actions/upload-artifact@v4
       with:
-        name: MyApp
-        path: dist/MyApp-${{ github.event.inputs.version }}.zip
+        name: WatchOSCSender
+        path: dist/WatchOSCSender.zip
         
     # リリースの作成
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: ${{ github.event.inputs.version }}
-        name: MyApp ${{ github.event.inputs.version }}
+        name: WatchOSCSender
         body: ${{ github.event.inputs.release_notes }}
         draft: true
         prerelease: false
         files: |
-          dist/MyApp-${{ github.event.inputs.version }}.zip
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          dist/WatchOSCSender.zip
