@@ -43,6 +43,8 @@ class OSCWatchApp:
         "VRAMTenPlace"   : "/avatar/parameters/VRAMTenPlace",
         "VRAMZeroPlace"  : "/avatar/parameters/VRAMZeroPlace",
     }
+    # カレント取得
+    currentDir = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, 'frozen', False) else __file__))
 
     def __init__(self, root):
         self.root = root
@@ -50,7 +52,7 @@ class OSCWatchApp:
         self.setup_logging()
         
         # チャットプリセットファイルのパスを設定
-        script_dir = os.path.dirname(os.path.abspath(__file__))
+        script_dir = self.currentDir
         self.CHAT_PRESETS_FILE = os.path.join(script_dir, "chat_presets.json")
         self.SETTINGS_FILE = os.path.join(script_dir, "settings.json")
 
@@ -66,7 +68,7 @@ class OSCWatchApp:
     def setup_logging(self):
         """ログファイル"""
         # logフォルダを作成
-        script_dir = os.path.dirname(os.path.abspath(__file__))
+        script_dir = self.currentDir
         log_dir = os.path.join(script_dir, "log")
         os.makedirs(log_dir, exist_ok=True)
         
@@ -105,21 +107,45 @@ class OSCWatchApp:
             pass
 
         # 2. AMD外付け
-        try:
-            from pyadl import ADLManager
+        try:            
+            # ADLXHelperで初期化
+            self.adlx_helper = ADLX.ADLXHelper()
+            self.ret = self.adlx_helper.Initialize()
+            if self.ret != ADLX.ADLX_RESULT.ADLX_OK:
+                pass
+            
+            # System Services取得
+            system = self.adlx_helper.GetSystemServices()
+            if system is None:
+                print("Failed to get system services")
+                self.adlx_helper.Terminate()
+                return
 
-            devices = ADLManager.getInstance().manager.getDevices()
+            # Performance Monitoring Services取得
+            self.perf_monitoring = system.GetPerformanceMonitoringServices()
+            if self.perf_monitoring is None:
+                print("Failed to get performance monitoring services")
+                self.adlx_helper.Terminate()
+                return
+            
+            # GPUリスト取得
+            gpu_list = system.GetGPUs()
+            if gpu_list is None:
+                print("Failed to get GPU list")
+                self.adlx_helper.Terminate()
+                return
 
-            # 外付けAMDを抽出（内蔵Vegaを除外）
-            # amd_gpus = [d for d in devices if "AMD" in d.getName().upper() and "VEGA" not in d.getName().upper()]          
-            amd_gpus = [
-                d for d in devices
-                if ("AMD" in (name := d.getName().upper()) or "RADEON" in name)
-                and "VEGA" not in name
-            ]
-            if amd_gpus:
-                self.gpu_name = amd_gpus[0].getName()
-                return "RADEON"            
+            # 最初のGPUでメトリクス取得（複数GPUの場合ループ）
+            self.gpu = gpu_list[0]  # 最初のGPU
+            self.metrics_support = self.perf_monitoring.GetSupportedGPUMetrics(self.gpu)
+            if self.ret != ADLX.ADLX_RESULT.ADLX_OK:
+                print("Failed to get metrics support")
+                self.adlx_helper.Terminate()
+                return
+            
+            self.console("ADLXHelperで初期化成功")
+            self.gpu_name = self.gpu.Name()
+            return "RADEON"
         except:
             pass
 
@@ -243,8 +269,6 @@ class OSCWatchApp:
         # ステータス表示を更新
         self.update_status_display()
         
-
-
     def toggle_chat_input(self):
         """チャット入力欄の有効/無効を切り替える"""
         new_state = tk.NORMAL if self.chat_enabled_var.get() else tk.DISABLED
@@ -308,10 +332,11 @@ class OSCWatchApp:
         elif self.gpu_vendor == "RADEON":
             return self.get_amd_gpu_usage()
         elif self.gpu_vendor == "INTEGRATED":
-            self.console("内臓グラボを検出")
+            self.console("内蔵GPUを検出")
         else:
-            self.console("警告: 対応していないGPUです。GPU使用率は0%として表示されます。")
-            self.console("gpu_vendor:" + self.gpu_vendor)
+            self.console("警告: 対応していないGPUです。")
+        self.console("GPU使用率は0%として表示されます。")
+        self.console("gpu_vendor:" + self.gpu_vendor)        
         return 0, 0
 
     def get_nvidia_gpu_usage(self):
@@ -348,50 +373,9 @@ class OSCWatchApp:
             sys.exit(1)
 
     def get_amd_gpu_usage(self):
-        # """AMD GPU使用率取得（非対応）"""
-        # msg = "AMD GPU使用率の監視は現在非対応です。0%として表示されます。"
-        # self.console(msg)
-        # return 0, 0
-        # ADLXHelperで初期化
-        self.adlx_helper = ADLX.ADLXHelper()
-        self.ret = self.adlx_helper.Initialize()
-        if self.ret != ADLX.ADLX_RESULT.ADLX_OK:
-            print("ADLX initialization failed")
-            return
-        # self.devices = self.detect_radeon()
-
-        # System Services取得
-        system = self.adlx_helper.GetSystemServices()
-        if system is None:
-            print("Failed to get system services")
-            self.adlx_helper.Terminate()
-            return
-
-        # Performance Monitoring Services取得
-        perf_monitoring = system.GetPerformanceMonitoringServices()
-        if perf_monitoring is None:
-            print("Failed to get performance monitoring services")
-            self.adlx_helper.Terminate()
-            return
-        
-        # GPUリスト取得
-        gpu_list = system.GetGPUs()
-        if gpu_list is None:
-            print("Failed to get GPU list")
-            self.adlx_helper.Terminate()
-            return
-
-        # 最初のGPUでメトリクス取得（複数GPUの場合ループ）
-        self.gpu = gpu_list[0]  # 最初のGPU
-        metrics_support = perf_monitoring.GetSupportedGPUMetrics(self.gpu)
-        if self.ret != ADLX.ADLX_RESULT.ADLX_OK:
-            print("Failed to get metrics support")
-            self.adlx_helper.Terminate()
-            return
-
         # GPUUsageとVRAMUsageがサポートされているか確認
-        if metrics_support.IsSupportedGPUUsage() and metrics_support.IsSupportedGPUVRAM():
-            current_metrics = perf_monitoring.GetCurrentGPUMetrics(self.gpu)
+        if self.metrics_support.IsSupportedGPUUsage() and self.metrics_support.IsSupportedGPUVRAM():
+            current_metrics = self.perf_monitoring.GetCurrentGPUMetrics(self.gpu)
             if self.ret == ADLX.ADLX_RESULT.ADLX_OK and current_metrics is not None:
                 gpu_usage = current_metrics.GPUUsage()  # GPU利用率 (%)
                 vram_usage = current_metrics.GPUVRAM()  # VRAM使用量 (MB)
