@@ -179,6 +179,7 @@ class OSCWatchApp:
         self.interval_entry = tk.Entry(self.root)
         self.interval_entry.grid(row=2, column=1, sticky="ew", pady=2)
         self.interval_entry.insert(0, "5")
+        self.interval_entry.config(state="readonly")
 
         # Default Start
         tk.Checkbutton(self.root, text="起動時にStart開始", variable=self.defaultStart_var, command=self.save_settings).grid(row=3, column=0, columnspan=2, sticky="w")
