@@ -3,13 +3,14 @@ import os
 import sys
 import tkinter as tk
 from tkinter import messagebox
-import tkinter.ttk as ttk
 from datetime import datetime
 from time import sleep
 from threading import Thread
 from math import ceil
 import logging
 import json
+import ADLXPybind as ADLX  # ADLXPybind.pydをインポート
+
 
 def import_with_install(package, module_name=None):
     """
@@ -42,6 +43,8 @@ class OSCWatchApp:
         "VRAMTenPlace"   : "/avatar/parameters/VRAMTenPlace",
         "VRAMZeroPlace"  : "/avatar/parameters/VRAMZeroPlace",
     }
+    # カレント取得
+    currentDir = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, 'frozen', False) else __file__))
 
     def __init__(self, root):
         self.root = root
@@ -49,7 +52,7 @@ class OSCWatchApp:
         self.setup_logging()
         
         # チャットプリセットファイルのパスを設定
-        script_dir = os.path.dirname(os.path.abspath(__file__))
+        script_dir = self.currentDir
         self.CHAT_PRESETS_FILE = os.path.join(script_dir, "chat_presets.json")
         self.SETTINGS_FILE = os.path.join(script_dir, "settings.json")
 
@@ -65,9 +68,9 @@ class OSCWatchApp:
     def setup_logging(self):
         """ログファイル"""
         # logフォルダを作成
-        script_dir = os.path.dirname(os.path.abspath(__file__))
+        script_dir = self.currentDir
         log_dir = os.path.join(script_dir, "log")
-        os.makedirs(log_dir, exist_ok=True)        
+        os.makedirs(log_dir, exist_ok=True)
         
         # ログファイル名（日時付き）
         log_filename = f"vrc_osc_watch_{datetime.now().strftime('%Y%m%d')}.log"
@@ -90,39 +93,72 @@ class OSCWatchApp:
 
     def detect_gpu_vendor(self):
         """GPU検出"""
+        # 1. NVIDIA外付け
         try:
-            # NVIDIAドライバをチェック
+            import pynvml
             pynvml.nvmlInit()
-            device_count = pynvml.nvmlDeviceGetCount()
-            if device_count > 0:
+            count = pynvml.nvmlDeviceGetCount()
+            if count > 0:
                 handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-                gpu_name = pynvml.nvmlDeviceGetName(handle).decode('utf-8')
+                self.gpu_name = pynvml.nvmlDeviceGetName(handle).decode("utf-8")
                 pynvml.nvmlShutdown()
-                self.gpu_name = gpu_name
                 return "NVIDIA"
         except:
             pass
-        
-        try:
-            import subprocess
-            result = subprocess.run(['wmic', 'path', 'win32_VideoController', 'get', 'name'], 
-                                  capture_output=True, text=True, shell=True)
-            if result.returncode == 0:
-                output = result.stdout.strip()
-                lines = [line.strip() for line in output.split('\n') if line.strip() and line.strip() != 'Name']
-                for line in lines:
-                    line_upper = line.upper()
-                    if 'AMD' in line_upper or 'ATI' in line_upper or 'RADEON' in line_upper:
-                        self.gpu_name = line
-                        return "AMD"
-                    elif 'NVIDIA' in line_upper or 'GEFORCE' in line_upper:
-                        self.gpu_name = line
-                        return "NVIDIA"
+
+        # 2. AMD外付け
+        try:            
+            # ADLXHelperで初期化
+            self.adlx_helper = ADLX.ADLXHelper()
+            self.ret = self.adlx_helper.Initialize()
+            if self.ret != ADLX.ADLX_RESULT.ADLX_OK:
+                pass
+            
+            # System Services取得
+            system = self.adlx_helper.GetSystemServices()
+            if system is None:
+                print("Failed to get system services")
+                self.adlx_helper.Terminate()
+                return
+
+            # Performance Monitoring Services取得
+            self.perf_monitoring = system.GetPerformanceMonitoringServices()
+            if self.perf_monitoring is None:
+                print("Failed to get performance monitoring services")
+                self.adlx_helper.Terminate()
+                return
+            
+            # GPUリスト取得
+            gpu_list = system.GetGPUs()
+            if gpu_list is None:
+                print("Failed to get GPU list")
+                self.adlx_helper.Terminate()
+                return
+
+            # 最初のGPUでメトリクス取得（複数GPUの場合ループ）
+            self.gpu = gpu_list[0]  # 最初のGPU
+            self.metrics_support = self.perf_monitoring.GetSupportedGPUMetrics(self.gpu)
+            if self.ret != ADLX.ADLX_RESULT.ADLX_OK:
+                print("Failed to get metrics support")
+                self.adlx_helper.Terminate()
+                return
+            
+            self.console("ADLXHelperで初期化成功")
+            self.gpu_name = self.gpu.Name()
+            return "RADEON"
         except:
             pass
-        
-        self.gpu_name = "Unknown GPU"
-        return "UNKNOWN"
+
+        # 3. 内蔵GPU
+        try:
+            import wmi
+            c = wmi.WMI()
+            gpus = c.Win32_VideoController()
+            if gpus:
+                self.gpu_name = gpus[0].Name
+                return "INTEGRATED"
+        except:
+            return None
 
     def create_widgets(self):
         # 基本設定エリア
@@ -143,6 +179,7 @@ class OSCWatchApp:
         self.interval_entry = tk.Entry(self.root)
         self.interval_entry.grid(row=2, column=1, sticky="ew", pady=2)
         self.interval_entry.insert(0, "5")
+        self.interval_entry.config(state="readonly")
 
         # Default Start
         tk.Checkbutton(self.root, text="起動時にStart開始", variable=self.defaultStart_var, command=self.save_settings).grid(row=3, column=0, columnspan=2, sticky="w")
@@ -233,8 +270,6 @@ class OSCWatchApp:
         # ステータス表示を更新
         self.update_status_display()
         
-
-
     def toggle_chat_input(self):
         """チャット入力欄の有効/無効を切り替える"""
         new_state = tk.NORMAL if self.chat_enabled_var.get() else tk.DISABLED
@@ -295,14 +330,15 @@ class OSCWatchApp:
     def get_gpu_usage_v2(self):
         if self.gpu_vendor == "NVIDIA":
             return self.get_nvidia_gpu_usage()
-        elif self.gpu_vendor == "AMD":
+        elif self.gpu_vendor == "RADEON":
             return self.get_amd_gpu_usage()
+        elif self.gpu_vendor == "INTEGRATED":
+            self.console("内蔵GPUを検出")
         else:
-            # ※Todo テスター見つかったのでAMDグラボも対応させます。
-
-            # GPU使用率が取得できない場合は0を返す
-            self.console("警告: 対応していないGPUです。GPU使用率は0%として表示されます。")
-            return 0, 0
+            self.console("警告: 対応していないGPUです。")
+        self.console("GPU使用率は0%として表示されます。")
+        self.console("gpu_vendor:" + self.gpu_vendor)        
+        return 0, 0
 
     def get_nvidia_gpu_usage(self):
         """NVIDIA GPU使用率を取得"""
@@ -338,11 +374,21 @@ class OSCWatchApp:
             sys.exit(1)
 
     def get_amd_gpu_usage(self):
-        """AMD GPU使用率取得（非対応）"""
-        msg = "AMD GPU使用率の監視は現在非対応です。0%として表示されます。"
-        self.console(msg)
-        return 0, 0
+        # GPUUsageとVRAMUsageがサポートされているか確認
+        if self.metrics_support.IsSupportedGPUUsage() and self.metrics_support.IsSupportedGPUVRAM():
+            current_metrics = self.perf_monitoring.GetCurrentGPUMetrics(self.gpu)
+            if self.ret == ADLX.ADLX_RESULT.ADLX_OK and current_metrics is not None:
+                gpu_usage = current_metrics.GPUUsage()  # GPU利用率 (%)
+                vram_usage = current_metrics.GPUVRAM()  # VRAM使用量 (MB)
+                self.console(f"GpuName: {self.gpu.Name()} ")
 
+                self.console(f"GPU Utilization: {gpu_usage}%")
+                self.console(f"VRAM Usage: {vram_usage} MB")
+                # Total VRAM取得
+                total_vram = self.gpu.TotalVRAM()  # IADLXGPUのVRAMメソッドで総VRAM取得 (MB)
+                self.console(f"Total VRAM: {total_vram} MB")
+        return int(gpu_usage), int(vram_usage / total_vram * 100)
+        
     def send_messages(self, interval, sync):
         sync_count = int(sync / interval)
         counters = {key: 0 for key in self.AVATAR_PARAMS.keys()}

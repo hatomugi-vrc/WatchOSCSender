@@ -10,3 +10,6 @@
 生成AIを使って作っているので雑な部分もあるかと思います。
 何かちょっとしたご指摘でも、古くなってるなどでも気軽にご連絡いただけると嬉しいです。
 XのDMやIssueなどお待ちしています。
+
+## ビルドコマンド
+pyinstaller --onefile --noconsole --noconfirm --clean VRCOSCWatch.py    
